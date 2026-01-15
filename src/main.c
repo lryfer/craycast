@@ -8,7 +8,7 @@
 
 #define WINDOW_WIDTH 1920
 #define WINDOW_HEIGHT 1080
-#define WINDOW_TITLE "raycaster name still to be chosen"
+#define WINDOW_TITLE "craycaster"
 // remove this if you want 3d
 #define DEBUG2D
 void gameloop(void);
@@ -55,8 +55,9 @@ void gameloop(void) {
       controls_handle_input(g_game_players[i].id);
     }
     // (local + network in future)
-    movement_process_player(&g_game_players[i], g_player_input[g_game_players[i].id],
-                   g_game_tilemap, delta_time);
+    movement_process_player(&g_game_players[i],
+                            g_player_input[g_game_players[i].id],
+                            g_game_tilemap, delta_time);
   }
 
   gamedraw();
