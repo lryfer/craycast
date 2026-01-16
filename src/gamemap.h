@@ -24,7 +24,7 @@ typedef struct {
 } SMF_TileMap_t;
 
 // Map parser functions
-SMF_TileMap_t* map_parse_tilemap(const char *filename);
+SMF_TileMap_t *map_parse_tilemap(const char *filename);
 void map_free_tilemap(SMF_TileMap_t *map);
 
 #endif

@@ -4,8 +4,8 @@
 // Player radius in tile units (0.25 = 8 pixels / 32 pixels per tile)
 #define PLAYER_RADIUS 0.25f
 
-void movement_process_player(Player_t *player, uint8_t input, SMF_TileMap_t *map,
-                    float delta_time) {
+void movement_process_player(Player_t *player, uint8_t input,
+                             SMF_TileMap_t *map, float delta_time) {
   float move_speed = player->speed * delta_time;
   float rot_speed = 3.0f * delta_time;
 

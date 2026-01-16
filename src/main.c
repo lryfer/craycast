@@ -10,7 +10,7 @@
 #define WINDOW_HEIGHT 1080
 #define WINDOW_TITLE "craycaster"
 // remove this if you want 3d
-#define DEBUG2D
+// #define DEBUG2D
 void gameloop(void);
 void gamedraw(void);
 void gamerender(void);
@@ -18,17 +18,34 @@ void render_3d_view(int offset_x, int view_width, int view_height);
 void render_2d_view(int offset_x, int view_width, int view_height);
 
 int16_t g_game_fps = 60;
-uint8_t g_game_fov = 100;
+uint8_t g_game_fov = 90;
 int g_game_num_rays = WINDOW_WIDTH;
-float g_game_step_size = 0.05f;
+float g_game_step_size = 0.005f;
 SMF_TileMap_t *g_game_tilemap;
 Player_t g_game_players[MAX_PLAYERS];
 int g_game_num_players = 1;
 _Bool g_game_running = true;
 
+// Textures (loaded once at startup)
+#define NUM_TEXTURES 6
+Texture2D g_textures[NUM_TEXTURES];
+const char *g_texture_paths[NUM_TEXTURES] = {
+    "./sprites/brick.png", "./sprites/cobblestone.png", "./sprites/grass.png",
+    "./sprites/metal.png", "./sprites/stone.png",       "./sprites/wood.png"};
+
 int main(int argc, char **argv) {
   InitWindow(WINDOW_WIDTH, WINDOW_HEIGHT, WINDOW_TITLE);
   SetTargetFPS(g_game_fps);
+
+  // Load textures once at startup
+  for (int i = 0; i < NUM_TEXTURES; i++) {
+    g_textures[i] = LoadTexture(g_texture_paths[i]);
+    // Enable bilinear filtering for smoother textures
+    SetTextureFilter(g_textures[i], TEXTURE_FILTER_BILINEAR);
+    // Set texture wrap mode to clamp to prevent bleeding at edges
+    SetTextureWrap(g_textures[i], TEXTURE_WRAP_CLAMP);
+  }
+
   // will be argv in the future
   g_game_tilemap = map_parse_tilemap("./TILEMAP.SMF");
 
@@ -40,6 +57,10 @@ int main(int argc, char **argv) {
     if (WindowShouldClose()) {
       g_game_running = false;
       map_free_tilemap(g_game_tilemap);
+      // Unload textures
+      for (int i = 0; i < NUM_TEXTURES; i++) {
+        UnloadTexture(g_textures[i]);
+      }
     }
   }
   CloseWindow();
@@ -167,14 +188,28 @@ void render_3d_view(int offset_x, int view_width, int view_height) {
     float ray_x = player->pos_x;
     float ray_y = player->pos_y;
     float distance = 0.0f;
+    int hit_side = 0; // 0 = vertical wall (NS), 1 = horizontal wall (EW)
 
     while (true) {
+      float prev_ray_x = ray_x;
+      float prev_ray_y = ray_y;
+
       ray_x += ray_dir_x * g_game_step_size;
       ray_y += ray_dir_y * g_game_step_size;
+
       distance += g_game_step_size;
 
       int tile_x = (int)ray_x;
       int tile_y = (int)ray_y;
+      int prev_tile_x = (int)prev_ray_x;
+      int prev_tile_y = (int)prev_ray_y;
+
+      if (tile_x != prev_tile_x) {
+        hit_side = 0; // Crossed vertical boundary (hit NS wall)
+      }
+      if (tile_y != prev_tile_y) {
+        hit_side = 1; // Crossed horizontal boundary (hit EW wall)
+      }
 
       if (tile_x < 0 || tile_x >= g_game_tilemap->width || tile_y < 0 ||
           tile_y >= g_game_tilemap->height) {
@@ -182,47 +217,66 @@ void render_3d_view(int offset_x, int view_width, int view_height) {
       }
 
       if (g_game_tilemap->tiles[tile_y][tile_x].tile_id != 0) {
-        // Fish-eye correction which works like shit
         float corrected_distance = distance * cosf(ray_angle - player->angle);
         float wall_height = (view_height / corrected_distance) * 0.5f;
         int wall_top = (view_height / 2) - (int)(wall_height / 2);
         int wall_bottom = (view_height / 2) + (int)(wall_height / 2);
         int column_x = offset_x + (ray * view_width) / g_game_num_rays;
         int column_width = (view_width / g_game_num_rays) + 1;
-        int brightness = (int)(255.0f / (1.0f + corrected_distance * 0.3f));
-        brightness = brightness > 255 ? 255 : (brightness < 0 ? 0 : brightness);
 
-        Color wall_color;
-        switch (g_game_tilemap->tiles[tile_y][tile_x].tile_id) {
-        case 1:
-          wall_color = (Color){brightness, 0, 0, 255}; // Red
-          break;
-        case 2:
-          wall_color = (Color){0, brightness, 0, 255}; // Green
-          break;
-        case 3:
-          wall_color = (Color){0, 0, brightness, 255}; // Blue
-          break;
-        default:
-          wall_color =
-              (Color){brightness, brightness, brightness, 255}; // White
-          break;
+        float brightness_factor = 1.0f / (1.0f + corrected_distance * 0.3f);
+        brightness_factor = brightness_factor > 1.0f ? 1.0f : brightness_factor;
+
+        // Calculate exact wall hit position (0.0 - 1.0)
+        float wall_x;
+        if (hit_side == 0) {
+          // Hit vertical wall (North/South face)
+          wall_x = ray_y - floorf(ray_y);
+        } else {
+          // Hit horizontal wall (East/West face)
+          wall_x = ray_x - floorf(ray_x);
         }
 
-        // TODO: Texture mapping - currently using solid colors
-        // for texture mapping we need:
-        // calculate hit_offset = where the ray hits on the tile (0.0 - 1.0)
-        // texture_x = (int)(hit_offset * texture_width)
+        if (hit_side == 1) {
+          // Wall darker if ray hits it on y
+          brightness_factor *= 0.8f;
+        }
 
-        // Draw wall slice
-        DrawRectangle(column_x, wall_top, column_width, wall_bottom - wall_top,
-                      wall_color);
+        int texture_index = g_game_tilemap->tiles[tile_y][tile_x].texture_id;
+        if (texture_index < 0 || texture_index >= NUM_TEXTURES) {
+          texture_index = 0;
+        }
+
+        Texture2D texture = g_textures[texture_index];
+
+        // Clamp to prevent bleeding at tile edges
+        float tex_x_normalized = fmodf(wall_x, 1.0f);
+        if (tex_x_normalized < 0.0f)
+          tex_x_normalized += 1.0f;
+
+        // Calculate texture X position in pixels
+        float tex_x_pos = tex_x_normalized * (texture.width - 1);
+
+        // Use minimal sampling width to avoid texture bleeding
+        Rectangle source = {tex_x_pos,
+                            // top y position
+                            0.0f,
+                            // 1 pixel
+                            1.0f, (float)texture.height};
+
+        Rectangle dest = {(float)column_x, (float)wall_top, (float)column_width,
+                          (float)(wall_bottom - wall_top)};
+
+        Color tint = {(unsigned char)(255 * brightness_factor),
+                      (unsigned char)(255 * brightness_factor),
+                      (unsigned char)(255 * brightness_factor), 255};
+
+        DrawTexturePro(texture, source, dest, (Vector2){0, 0}, 0.0f, tint);
         break;
       }
     }
   }
 
-  // Draw FPS and info
   DrawText(TextFormat("FPS: %d", GetFPS()), offset_x + 10, 10, 20, YELLOW);
   DrawText(TextFormat("Pos: %.1f, %.1f", player->pos_x, player->pos_y),
            offset_x + 10, 35, 20, YELLOW);
