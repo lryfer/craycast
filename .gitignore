@@ -7,4 +7,4 @@ build/*.o
 *.kdev4
 
 # Executable
-craycasting
+./bin/craycaster
